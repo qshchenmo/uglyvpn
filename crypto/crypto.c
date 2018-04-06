@@ -6,9 +6,7 @@
 #include <syslog.h>
 #include <stdint.h>
 
-
-#include "log.h"
-#include "../cryptoc.h"
+#include "cryptoc.h"
 #include "crypto.h"
 
 void md5(uint8_t* input, uint32_t len, uint8_t* digest)
@@ -72,7 +70,6 @@ int cryptor_init(struct cryptor* self, int theme, char* passwd, int passwdlen)
     templete = cryptor_templete_lookup(theme);
     if (!templete)
     {
-        uvpn_syslog(LOG_ERR,"can't find crypto theme %d", theme);   
         return -1;
     }
 

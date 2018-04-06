@@ -6,18 +6,21 @@
 #include <assert.h>
 #include <syslog.h>
 #include <arpa/inet.h>
+#include <sys/un.h>  
 
 #include "../util/net.h"
 #include "../util/epoller.h"
 #include "../util/log.h"
-#include "../util/msg.h"
-#include "../util/random.h"
 #include "../util/timer.h"
-#include "../util/crypto.h"
+#include "../uvpnctl/uvpnctl.h"
+#include "../crypto/random.h"
+#include "../crypto/crypto.h"
 
+#include "msg.h"
 #include "pub.h"
 #include "tunnel.h"
 #include "user.h"
+#include "control.h"
 #include "uvpnd.h"
 #include "server.h"
 
@@ -38,8 +41,6 @@ struct process{
 	struct user* user;
     int kacnt;
     int kafd;                    /* keep alive fd            */
- //   int (*encrypt)(char* buf, int len, int* outlen);
- //   int (*decrypt)(char* buf, int len, int* outlen);
     struct cryptor cryptor;
 };
 
@@ -79,15 +80,11 @@ static void server_ipassign(struct process* p)
 
 static void server_send_challenge(struct process* p)
 {
-	// struct msg_chanresp chanresp;
-
 	/* set new state */
 	p->state = PROCESS_STATE_CHANLLENGE;
 
 	/* generate challenge-response */
 	random_generator(p->user->chanresp, CHALLENGE_RESPONSE_SIZE);
-
-	//memcpy(chanresp.chanresp, p->user->chanresp, CHALLENGE_RESPONSE_SIZE);
 
 	/* send to client */
 	link_sendmsg(p->linkfd, AUTH_CHALLENGE, p->user->chanresp, CHALLENGE_RESPONSE_SIZE);
@@ -139,6 +136,11 @@ static void process_terminate(struct process* p)
 
 	uvpn_syslog(LOG_INFO,"process %d teminated",p->linkfd);
 
+	/* tell client that server process is terminating */
+	link_sendmsg(p->linkfd, TERMINATED, NULL, 0);
+    
+    epoller_del(p->linkfd, &g_server.epoller);
+    
 	g_server.process[index] = NULL;
 	--g_server.n_used;
 
@@ -302,6 +304,27 @@ static int server_recv_karesponse(void* payload, int len, void* arg)
     return 0;
 }
 
+static int server_terminate(void* payload, int len, uint8_t* sbuf, int* slen)
+{
+	/* terminate all process */
+	for (int i = 0; i != AUTH_MAX_PROCESS; ++i)
+	{
+	    if (g_server.process[i])
+        {
+            uvpn_syslog(LOG_INFO,"process %s terminated", g_server.process[i]->index);
+            process_terminate(g_server.process[i]);
+        }   
+	}
+
+	/* close tun fd */
+	close(g_server.tunfd);
+
+	unlink(UVPND_UNIX_PATH);
+	
+	exit(0);
+
+	return 0;
+}
 static struct msg_handler server_msg_handlers[] = 
 {
 	{
@@ -337,6 +360,18 @@ static struct msg_handler server_msg_handlers[] =
 };
 
 #define SERVER_MSG_HADNLER_ARRAY_LEN (sizeof(server_msg_handlers)/sizeof(server_msg_handlers[0]))
+
+static struct cmd_handler server_cmd_handlers[] = 
+{
+	{
+		.type = CMD_TERMINATE,
+		.minsize = 0,
+		.func = server_terminate,
+	},
+
+};
+
+#define SERVER_CMD_HADNLER_ARRAY_LEN (sizeof(server_cmd_handlers)/sizeof(server_cmd_handlers[0]))
 
 int server_link_routine(int event, void* handle)
 {
@@ -582,7 +617,7 @@ int server_tun_read(int event, void* handle)
 
 void uvpn_server(struct srv_opts* opt)
 {	
-	int s;
+	int sock;
 
 	g_server.opt = opt;
 
@@ -594,8 +629,11 @@ void uvpn_server(struct srv_opts* opt)
 
 	epoller_init(&g_server.epoller);
 
-	s = server_port_open();
-	epoller_add(s, &g_server.epoller, connect_request, NULL);
+	sock = server_port_open();
+	epoller_add(sock, &g_server.epoller, connect_request, NULL);
+
+	sock = cmd_port_open();
+	epoller_add(sock, &g_server.epoller, cmd_routine, NULL);
 
     /* open tun fd */
     g_server.tunfd = tun_open(g_server.opt->tundev);
@@ -615,7 +653,8 @@ void uvpn_server(struct srv_opts* opt)
 	g_server.unused = (uint16_t*) (g_server.process + AUTH_MAX_PROCESS);
 	for (int i = 0; i != AUTH_MAX_PROCESS; ++i)
 	{
-		g_server.unused[i] = AUTH_MAX_PROCESS - i - 1;
+		g_server.unused[i]  = AUTH_MAX_PROCESS - i - 1;
+		g_server.process[i] = NULL;
 	}
 
 	/* register message handler */
@@ -623,6 +662,10 @@ void uvpn_server(struct srv_opts* opt)
 	for (h = server_msg_handlers; h < &server_msg_handlers[SERVER_MSG_HADNLER_ARRAY_LEN]; ++h)
 		msg_handler_register(h);
 	
+	struct cmd_handler* c;
+	for (c = server_cmd_handlers; c < &server_cmd_handlers[SERVER_CMD_HADNLER_ARRAY_LEN]; ++c)
+		cmd_handler_register(c);
+
 	uvpn_syslog(LOG_INFO, "ugly-vpnd server running!");
 
 	/* epoll loop */

@@ -1,7 +1,7 @@
 #ifndef _MSG_H_
 #define _MSG_H_
 
-#include "list.h"
+#include "../util/list.h"
 
 struct ipcmsg{
     int type;

@@ -27,6 +27,8 @@
 #define ETHERNET_DATA     7
 #define KA_REQUEST        8
 #define KA_RESPONSE       9
+#define TERMINATED      100
+
 
 struct msg_shakehand{
 	uint32_t userid;

@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 
 #include "../util/log.h"
-#include "../util/msg.h"
+#include "msg.h"
 
 #include "pub.h"
 

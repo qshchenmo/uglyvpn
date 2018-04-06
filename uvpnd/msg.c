@@ -1,5 +1,4 @@
-
-#include "list.h"
+#include "../util/list.h"
 #include "msg.h"
 
 static struct list_head msgsw = {&msgsw, &msgsw};

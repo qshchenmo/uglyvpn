@@ -10,9 +10,9 @@
 #include "../util/net.h"
 #include "../util/epoller.h"
 #include "../util/log.h"
-#include "../util/msg.h"
-#include "../util/crypto.h"
+#include "../crypto/crypto.h"
 
+#include "msg.h"
 #include "pub.h"
 #include "tunnel.h"
 #include "user.h"
@@ -41,6 +41,25 @@ struct uvpn_client_run{
 };
 
 struct uvpn_client_run g_client;
+
+/* client terminated 
+   @active: client active terminate
+*/
+static void client_terminated(int active)
+{
+  	if (active)
+  	{
+  		link_sendmsg(g_client.linkfd, TERMINATED, NULL, 0);
+  	}  
+  	
+  	epoller_del(g_client.linkfd, &g_client.epoller);
+    
+	close(g_client.linkfd);
+
+	close(g_client.tunfd);
+
+	exit(0);
+}
 
 static int client_recv_shake_2(void* payload, int len, void* arg)
 {	
@@ -156,8 +175,6 @@ static int client_recv_addr(void* payload, int len, void* arg)
     
     g_client.srv_vaddr = msg->srv_vaddr;
     g_client.cli_vaddr = msg->cli_vaddr;
-
-//    uvpn_syslog(LOG_INFO,"client udp fd %d create ", g_client.udpfd);
     
     tun_setip(g_client.opt->tundev, inet_ntoa(g_client.cli_vaddr));
     tun_setmask(g_client.opt->tundev, "255.255.255.0");
@@ -186,7 +203,7 @@ static int client_recv_ethdata(void* payload, int len, void* arg)
     
     /* read plaintext length */
     plen = *(int*)payload;
-    uvpn_syslog(LOG_INFO,"server_recv_ethdata %d (%d) ", len, plen);
+    uvpn_syslog(LOG_INFO,"client_recv_ethdata %d (%d) ", len, plen);
 
     /* seek frame pointer to real data */
     frame = (uint8_t*)payload + PRE_DATA_OFFSET;
@@ -219,6 +236,15 @@ static int client_recv_karequest(void* payload, int len, void* arg)
     return 0;
 }
 
+static int client_recv_terminated(void* payload, int len, void* arg)
+{
+    uvpn_syslog(LOG_INFO,"client recv server is terminated");
+
+    client_terminated(0);
+
+    return 0;
+}
+
 static struct msg_handler client_msg_handlers[] = 
 {
 	{
@@ -242,9 +268,9 @@ static struct msg_handler client_msg_handlers[] =
         .func = client_recv_ethdata,
     },
     {
-        .type = KA_REQUEST,
+        .type = TERMINATED,
         .minsize = 0,
-        .func = client_recv_karequest,
+        .func = client_recv_terminated,
     },
 };
 #define CLIENT_MSG_HADNLER_ARRAY_LEN (sizeof(client_msg_handlers)/sizeof(client_msg_handlers[0]))
