@@ -304,27 +304,6 @@ static int server_recv_karesponse(void* payload, int len, void* arg)
     return 0;
 }
 
-static int server_terminate(void* payload, int len, uint8_t* sbuf, int* slen)
-{
-	/* terminate all process */
-	for (int i = 0; i != AUTH_MAX_PROCESS; ++i)
-	{
-	    if (g_server.process[i])
-        {
-            uvpn_syslog(LOG_INFO,"process %s terminated", g_server.process[i]->index);
-            process_terminate(g_server.process[i]);
-        }   
-	}
-
-	/* close tun fd */
-	close(g_server.tunfd);
-
-	unlink(UVPND_UNIX_PATH);
-	
-	exit(0);
-
-	return 0;
-}
 static struct msg_handler server_msg_handlers[] = 
 {
 	{
@@ -361,6 +340,59 @@ static struct msg_handler server_msg_handlers[] =
 
 #define SERVER_MSG_HADNLER_ARRAY_LEN (sizeof(server_msg_handlers)/sizeof(server_msg_handlers[0]))
 
+static void* server_terminate(void* payload, int len, int* slen)
+{
+	/* terminate all process */
+	for (int i = 0; i != AUTH_MAX_PROCESS; ++i)
+	{
+	    if (g_server.process[i])
+        {
+            uvpn_syslog(LOG_INFO,"process %s terminated", g_server.process[i]->index);
+            process_terminate(g_server.process[i]);
+        }   
+	}
+
+	/* close tun fd */
+	close(g_server.tunfd);
+
+	unlink(UVPND_UNIX_PATH);
+	
+	exit(0);
+
+	return 0;
+}
+
+static void* server_show_status(void* payload, int len, int* slen)
+{	
+	struct cmd_response_status* response;
+	struct client_info* client;
+	int allocsize;
+	int i = 0,j = 0;
+
+	allocsize = sizeof(struct cmd_response_status) + g_server.n_used * sizeof(struct client_info);
+	
+	response = (struct cmd_response_status* )malloc(allocsize);
+	
+	client = (struct client_info* )((char*)response + sizeof(struct cmd_response_status));
+
+	response->num = g_server.n_used;
+
+	uvpn_syslog(LOG_INFO,"%s process is active", response->num);
+
+	for (i = 0; i < AUTH_MAX_PROCESS; ++i)
+	{
+		if (g_server.process[i])
+		{
+			client[j].sin_addr = g_server.process[i]->cli_vaddr;
+			j++;
+		}
+	}
+
+	*slen = allocsize;
+
+	return response;
+}
+
 static struct cmd_handler server_cmd_handlers[] = 
 {
 	{
@@ -368,7 +400,11 @@ static struct cmd_handler server_cmd_handlers[] =
 		.minsize = 0,
 		.func = server_terminate,
 	},
-
+	{
+		.type = CMD_SHOW_STATUS,
+		.minsize = 0,
+		.func = server_show_status,
+	},
 };
 
 #define SERVER_CMD_HADNLER_ARRAY_LEN (sizeof(server_cmd_handlers)/sizeof(server_cmd_handlers[0]))

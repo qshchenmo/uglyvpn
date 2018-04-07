@@ -9,7 +9,7 @@ struct cmd_handler{
 	struct list_head list;
 	int type;
 	int minsize;	
-	int (*func)(void* payload, int len, uint8_t* sbuf, int* slen);
+	void* (*func)(void* payload, int len, int* slen);
 };
 
 void cmd_handler_register(struct cmd_handler* h);

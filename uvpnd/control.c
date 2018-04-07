@@ -100,11 +100,11 @@ int cmd_routine(int event, void* handle)
 	int addrlen = sizeof(addr);
 	struct epoller_handler* handler = (struct epoller_handler* )handle;
 	uint8_t rbuf[128];
-	uint8_t sbuf[128];
-	int rlen, slen;
+	int slen, rlen;
 	struct cmd_head* cmd_head = NULL;
 	struct cmd_handler* cmd_handler = NULL;
-	
+	void* response = NULL;
+
 	rlen = recvfrom(handler->fd, rbuf, sizeof(rbuf) - 1, 0,    
                     (struct sockaddr * )&addr,(socklen_t *)&addrlen);    
     
@@ -120,13 +120,14 @@ int cmd_routine(int event, void* handle)
 	if (cmd_handler)
 	{
 		if (rlen - sizeof(cmd_head) >= cmd_handler->minsize)
-			cmd_handler->func((void*)((unsigned char*)cmd_head + sizeof(struct cmd_head)), rlen - sizeof(cmd_head), sbuf, &slen);
+			response = cmd_handler->func((void*)((unsigned char*)cmd_head + sizeof(struct cmd_head)), rlen - sizeof(cmd_head), &slen);
 	
-		if (sendto(handler->fd, sbuf, slen, 0, (struct sockaddr *)&addr, addrlen) < 0 )    
-    	{    
-        	uvpn_syslog(LOG_ERR, "control cmd response error"); 
-        	return -1;    
-    	}  
+		if (response)
+		{
+			sendto(handler->fd, (void*)response, slen, 0, (struct sockaddr *)&addr, addrlen);
+
+			free(response);
+		}
 	}
 
     return 0;
