@@ -70,6 +70,8 @@ static void server_ipassign(struct process* p)
     inet_aton(g_server.opt->srv_ip, &msg.srv_vaddr);
     inet_aton("10.100.0.101", &msg.cli_vaddr);
     
+    inet_aton("10.100.0.101", &p->cli_vaddr);
+
     uvpn_syslog(LOG_INFO,"server ip %s", g_server.opt->srv_ip);   
 
     /* send to client */
@@ -377,7 +379,7 @@ static void* server_show_status(void* payload, int len, int* slen)
 
 	response->num = g_server.n_used;
 
-	uvpn_syslog(LOG_INFO,"%s process is active", response->num);
+	uvpn_syslog(LOG_INFO,"%d process is active", response->num);
 
 	for (i = 0; i < AUTH_MAX_PROCESS; ++i)
 	{
